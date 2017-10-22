@@ -197,6 +197,8 @@ GO
 /*Listing 13: Return table row counts from the index or table partition*/
 -- A faster way to get table row counts. 
 -- Hint: get it from an index, not the table.
+USE WideWorldImporters;
+GO
 SELECT  @@ServerName AS Server ,
         DB_NAME() AS DBName ,
         OBJECT_SCHEMA_NAME(p.object_id) AS SchemaName ,
