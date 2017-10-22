@@ -903,7 +903,7 @@ EXEC sp_msdependencies NULL, 3 -- List table dependencies
 GO
 
 /*Listing 33: using sp_msdependencies to view objects that depend on a table (first level only)*/
--- sp_MSdependencies sp_MSdependencies — First level only 
+-- sp_MSdependencies sp_MSdependencies ï¿½ First level only 
 -- Objects that are dependent on the specified object 
 EXEC sp_MSdependencies N'[Sales].[Customer]',null, 1315327 -- Change Table Name 
 GO
