@@ -43,7 +43,7 @@ GO
 
 /*Listing 4: Database Inventory*/
 
-EXEC sp_helpdb; 
+EXEC sp_helpdb 'Test'; 
 --OR 
 EXEC sp_Databases; 
 --OR 
@@ -113,7 +113,7 @@ ORDER BY DatabaseName;
 /*Listing 8: Listing out all user-defined tables in a database*/
 
 -- In this example U is for tables. Try swapping in one of the many other types. 
-USE MyDatabase;
+USE WideWorldImporters;
 GO
 SELECT  *
 FROM    sys.objects
@@ -172,7 +172,7 @@ GO
 
 /*Listing 11: A script to generate a script to return row counts for all tables*/
 SELECT  'Select ''' + DB_NAME() + '.' + SCHEMA_NAME(SCHEMA_ID) + '.'
-        + LEFT(o.name, 128) + ''' as DBName, count(*) as Count From ' + o.name
+        + LEFT(o.name, 128) + ''' as TableName, count(*) as Count From ' + o.name
         + ';' AS ' Script generator to get counts for all tables'
 FROM    sys.objects o
 WHERE   o.[type] = 'U'
