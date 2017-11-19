@@ -1,7 +1,7 @@
 function Export-DbaDetails {
 <#
 .SYNOPSIS
-PowerShell Cmdlet to Export entire SQL Instance Details into an output file.
+PowerShell Cmdlet to Export entire SQL Instance Details into an output file. Still in development. Experimenting and Sourcing Code from dbatools repository.
 
 .DESCRIPTION
 Long description
