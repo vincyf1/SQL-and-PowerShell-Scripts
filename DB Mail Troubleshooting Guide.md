@@ -63,4 +63,55 @@ Here’s what it looks like when the call succeeds. I doesn’t show the call it
 Notice the 3 part name of the server… host.domain.top-level-domain.
 Now, strictly speaking it doesn’t HAVE to have the FQDN. In my experience you can use either the servername or the FQDN but you usually can’t use just the host.domain. But there are so many variations in networks I can easily see it be possible that yours is setup to be able to resolve host.domain. Anyway, whatever smtp address they gave you is what you should use.
 
+Telnet is one of those very unfriendly programs because underneath that 1st line you’ll just have a blinking cursor… not even a cmd prompt, just a cursor. So you have to know what to do.
+
+However, let’s mark what telnet has told us so far. So far by being able to connect to the server, we know the following:
+1. There’s nothing wrong with the network between the 2 servers.
+2. Port 25 isn’t being blocked by anything.
+3. The smtp server is running and active.
+
+Now, this is a simple port test so we still don’t know if we can send mail to that server. We just know that physically there’s nothing standing in our way. Had this step failed, we would proceed with testing the network connection, firewall, anti-virus (AV), and Exchange. You won’t be able to test Exchange itself probably, but you can ask your Exchange guy if it’s up. And you can ask your network guy if he knows of anything wrong with the network between the 2 servers. At this point though, chances are it’s a firewall issue. That could mean a local Windows firewall, or maybe your AV has a firewall, or it could be an external firewall sitting between the 2 servers. But usually when you can’t connect you’ve either got a firewall issue, or you’ve typed something wrong in the cmd.
+
+One more thing on this before I move on. If it appears to hang instead of returning an error it’s highly likely that it’s a firewall issue. This is the #1 sign that you’re being blocked. So if you hit enter on your cmd and it just doesn’t return, or takes a long time to return, then start looking at firewall issues before you do anything else. Otherwise the cmd should return fairly quickly… usually within 1-2secs.
+
+Ok, we’ve verified basic connectivity, now we need to see if we can actually send mail through that host. We’re going to physically test that in a min, but for now let’s stay with telnet and do a couple tests.
+Let’s start with a simple HELLO cmd. In smtp world, we’re going to use EHLO, which means Extended Hello.
+First though you’ll need to reset with RSET. Then you’ll run EHLO, then you’ll get your results.
+*Note that after each cmd you’ll be greeted by the same unfriendly cursor with no cmd prompt. It’s not thinking, it’s waiting for a cmd from you. Here’s the entire session:
+
+You’ll see that all the responses start with 250. 250 means OK.
+For further reading here’s a piece on Extended SMTP: http://en.wikipedia.org/wiki/Extended_SMTP
+
+*NOTE: Of course, you could just have the wrong smtp server name… wouldn’t it be great if it were that simple?
+
+## 4. Test SMTP Relay through telnet.
+
+Now we’re going to start our relay tests. This will tell us if the server is setup to be able to send mail through the smtp server.
+Before we get into the actual cmds though, I want to take a couple mins and explain why we have to do this. This is a beginner tutorial after all, so I like to explain things.
+
+### What is SMTP Relay?
+
+Ok, so here’s the scoop, and I’ll be as brief as I can. The spammers of this world like to send emails to as many people as they can. They hide viruses in their emails, porn, and sometimes their just nonsense. Regardless of their goal they have this funny thing about getting caught. It’s actually illegal to spread viruses intentionally through email spam. So what these dastardly doers of dirty deeds do is they look for an open email server they can use to send the spam for them. Once they find an unsuspecting email server out on the internet, they use that server to relay their spam for them. So the way companies fight this is they lock down their email servers so that only certain servers can use them as an SMTP relay. I’m pretty sure MS Exchange comes locked down out of the box these days, so good for MS. You have to specifically open up SMTP relay for any server you want to allow to send mail through your Exchange server. And what we’re going to do now is test whether our server can send email through our email server.
+
+Before each set of cmds you have to reset. So you’ll notice I always type RSET before each set.
+
+In the above pic, the greens are your reset cmds. Notice there’s one after each set of cmds?
+Also, I didn’t EHLO first so I had to do that before I could do anything else. And once I got my response back I ran RSET and then my yellow cmds. My yellow cmds are the ones that actually test the relay. They pretty much explain themselves so I won’t go into any detail.
+
+If your relay cmds fail then perhaps you should talk to your email admin to make sure your server is setup as an SMTP Relay. You’ll send him your IP and he’ll make it happen.
+To get out of telnet type QUIT.
+And just so there are no misunderstands, here’s the list of cmds from start to finish for this operation.
+telnet smtp.domain.tdl
+rset
+ehlo
+rset
+mail from:FromEmail@domain.com
+rcpt to:ToEmail@domain.com
+
+If everything succeeds then we know that our server is setup with smtp relay through the email server.
+
+
+
+
+
 
