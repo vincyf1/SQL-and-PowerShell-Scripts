@@ -4,13 +4,21 @@ function Export-DbaDetails {
 PowerShell Cmdlet to Export entire SQL Instance Details into an output file. Still in development. Experimenting and Sourcing Code from dbatools repository.
 
 .DESCRIPTION
-Long description
+Long Description 
 
 .EXAMPLE
 An example
 
 .NOTES
 General notes
+
+Feature Request
+Issue #2655
+The purpose of Export-DbaDetails is to export an entire instance of SQL Server to a file. This is useful for source control purposes or even "dataless" migration purposes.
+
+Problem to solve
+Ability to create a dataless export of a SQL Server instance or instances for source control or migration purposes
+
 #>
     [CmdletBinding(SupportsShouldProcess = $true)]
     param (
