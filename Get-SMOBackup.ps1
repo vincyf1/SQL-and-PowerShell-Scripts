@@ -1,3 +1,36 @@
+[System.Reflection.Assembly]::LoadWithPartialName('Microsoft.SqlServer.SMO') | Out-Null
+[System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.SmoExtended") | Out-Null
+
+Function Get-LastBackupFile {
+    Param(
+        [string]$server,
+        [string]$database
+    )
+    
+    $qry = @"
+DECLARE @dbname sysname 
+SET @dbname = '$database'
+SELECT  f.physical_device_name as [backup]
+FROM    msdb.dbo.backupset AS s WITH (nolock) INNER JOIN
+            msdb.dbo.backupmediafamily AS f WITH (nolock) ON s.media_set_id = f.media_set_id
+WHERE   (s.database_name = @dbname) AND (s.type = 'D') AND (f.device_type <> 7) 
+        AND (s.backup_finish_date = (SELECT MAX(backup_finish_date)
+FROM         msdb.dbo.backupset WITH (nolock)
+WHERE     (database_name = @dbname) AND (type = 'D') AND (is_snapshot = 0)))
+"@
+ 
+    # Get an SMO Connection
+    $smo = New-Object ('Microsoft.SqlServer.Management.Smo.Server') $server
+    # most appropriate to use MSDB
+    $db = $smo.Databases["msdb"]
+    # Execute query with results
+    $rs = $db.ExecuteWithResults($qry)
+    # SMO connection is no longer needed
+    $smo.ConnectionContext.Disconnect()
+    # Return the result
+    $rs.Tables[0].Rows[0].Item('backup') | Out-String
+}
+
 ## Path to Text File with list of Servers
 
 $ServerList = Get-Content "C:\temp\Serverlist.txt"
@@ -21,21 +54,22 @@ $HTML = '<style type="text/css">
 $HTML += "<HTML><BODY><Table border=1 cellpadding=0 cellspacing=0 width=100% id=Header> 
         <TR> 
             <TH><B>Database Name</B></TH> 
-            <TH><B>RecoveryModel</B></TD> 
-            <TH><B>Last Full Backup Date</B></TH> 
+            <TH><B>RecoveryModel</B></TH> 
+            <TH><B>Last Full Backup Date</B></TH>
+            <TH><B>Backup File</B></TH>  
             <TH><B>Last Differential Backup Date</B></TH> 
             <TH><B>Last Log Backup Date</B></TH> 
         </TR>" 
  
  ## Load SQL Management Objects Assembly
 
-[System.Reflection.Assembly]::LoadWithPartialName('Microsoft.SqlServer.SMO') | Out-Null 
+
 
 ## Iterate Each Server through the Server list
 
 ForEach ($ServerName in $ServerList) 
 { 
-    $HTML += "<TR bgColor='#ccff66'><TD colspan=5 align=center><B>$ServerName</B></TD></TR>" 
+    $HTML += "<TR bgColor='#ccff66'><TD colspan=6 align=center><B>$ServerName</B></TD></TR>" 
      
     $SQLServer = New-Object ('Microsoft.SqlServer.Management.Smo.Server') $ServerName  
 
@@ -45,6 +79,16 @@ ForEach ($ServerName in $ServerList)
     {
         Foreach($Database in $SQLServer.Databases) 
         { 
+            #Get Backup File Information
+            $BackupFile = $null
+            try
+            {
+                $BackupFile = Get-LastBackupFile -server $ServerName.ToString() -database $Database.Name
+            }
+            Catch
+            {
+                $BackupFile = "NA"
+            }
 
             If($Database.LastBackupDate -eq '01/01/0001 00:00:00')
             {
@@ -76,7 +120,8 @@ ForEach ($ServerName in $ServerList)
                 $HTML += "<TR> 
                             <TD>$($Database.Name)</TD> 
                             <TD>$($Database.RecoveryModel)</TD> 
-                            <TD>$DBLastFullDate</TD> 
+                            <TD>$DBLastFullDate</TD>
+                            <TD>$BackupFile</TD> 
                             <TD>$DBLastDiffDate</TD> 
                             <TD>$DBLastLogDate</TD> 
                         </TR>" 
@@ -86,7 +131,8 @@ ForEach ($ServerName in $ServerList)
                 $HTML += "<TR> 
                             <TD>$($Database.Name)</TD> 
                             <TD>$($Database.RecoveryModel)</TD> 
-                            <TD>$DBLastFullDate</TD> 
+                            <TD>$DBLastFullDate</TD>
+                            <TD>$BackupFile</TD>  
                             <TD>$DBLastDiffDate</TD> 
                             <TD>$DBLastLogDate</TD> 
                         </TR>" 
@@ -98,7 +144,7 @@ ForEach ($ServerName in $ServerList)
     else ## Server Unable to Connect
     {
         $HTML += "<TR> 
-                    <TD colspan=5 align=center style='background-color:red'><B>Unable to Connect to SQL Server</B></TD> 
+                    <TD colspan=6 align=center style='background-color:red'><B>Unable to Connect to SQL Server</B></TD> 
                   </TR>" 
     
     }    
@@ -112,6 +158,5 @@ Write-Host "Output File Successfully Generated: " $OutputFile -ForegroundColor Y
 ## 1. Generate CSV File
 ## 2. Send Mail Functionality
 ## 3. Color Code Backups Older than 2 \ 7 \ 30 Days? 
-## 4. Addition of Corresponding Backup Paths 
-## 5. Scheduling via Windows Task Scheduler as a batch file
+## 4. Scheduling via Windows Task Scheduler as a batch file
 ###############################################################
