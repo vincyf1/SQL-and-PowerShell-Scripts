@@ -28,7 +28,7 @@ WHERE     (database_name = @dbname) AND (type = 'D') AND (is_snapshot = 0)))
     # SMO connection is no longer needed
     $smo.ConnectionContext.Disconnect()
     # Return the result
-    $rs.Tables[0].Rows[0].Item('backup') | Out-String
+    $rs.Tables[0].Rows[0].Item('backup')|Out-String
 }
 
 ## Path to Text File with list of Servers
@@ -38,7 +38,13 @@ Write-Host "Number of Servers Listed: " $ServerList.Count -ForegroundColor Yello
 
 ## Path to Output file 
 
-$OutputFile = "C:\temp\Output.htm" 
+$RootPath = "C:\temp"
+$HTMLPath = $RootPath + "\Output_$(Get-Date -Format "yyyymmmdd_hh-mm-ss").htm" 
+$CSVPath = $RootPath + "\Output_$(Get-Date -Format "yyyymmmdd_hh-mm-ss").csv" 
+$FailPath = $RootPath + "\Failure_$(Get-Date -Format "yyyymmmdd_hh-mm-ss").txt"
+
+$ResultCSV = @()
+$Failures = @()
 
 ## Generate HTML Table Formatting
  
@@ -79,7 +85,7 @@ ForEach ($ServerName in $ServerList)
     {
         Foreach($Database in $SQLServer.Databases) 
         { 
-            #Get Backup File Information
+            ## Get Backup File Information
             $BackupFile = $null
             try
             {
@@ -137,26 +143,45 @@ ForEach ($ServerName in $ServerList)
                             <TD>$DBLastLogDate</TD> 
                         </TR>" 
             }
-        }
+        
+            $CSV = @{
 
-               
+            Server = $ServerName
+            DatabaseName = $Database.Name
+            RecoveryModel = $Database.RecoveryModel
+            LastFullBackup = $DBLastFullDate
+            BackupFile = $BackupFile
+            LastDiffBackup = $DBLastDiffDate
+            LastLogBackup = $DBLastLogDate
+        
+            }
+        $ResultCSV += New-Object psobject -Property $CSV       
+        }
     }
     else ## Server Unable to Connect
     {
         $HTML += "<TR> 
                     <TD colspan=6 align=center style='background-color:red'><B>Unable to Connect to SQL Server</B></TD> 
                   </TR>" 
-    
+        $FailureServer = @{
+        ServerName = $ServerName
+        Message = "Connection Failed"
+        }
+
+        $Failures += New-Object psobject -Property $FailureServer
     }    
+    
+    
+
 } 
 $HTML += "</Table></BODY></HTML>" 
-$HTML | Out-File $OutputFile
+$HTML | Out-File $HTMLPath
+ 
+$ResultCSV | Select-Object Server, DatabaseName, RecoveryModel, LastFullBackup, BackupFile, LastDiffBackup, LastLogBackup | Export-Csv -notypeinformation -Path $CSVPath
+$Failures | Select-Object ServerName, Message | Out-File $FailPath
 
-Write-Host "Output File Successfully Generated: " $OutputFile -ForegroundColor Yellow
-###############################################################
-## ENHANCEMENTS TO-DO
-## 1. Generate CSV File
-## 2. Send Mail Functionality
-## 3. Color Code Backups Older than 2 \ 7 \ 30 Days? 
-## 4. Scheduling via Windows Task Scheduler as a batch file
-###############################################################
+Write-Host "Output File Successfully Generated: " $HTMLPath -ForegroundColor Yellow
+Write-Host "Output File Successfully Generated: " $CSVPath -ForegroundColor Yellow
+
+## Send Mail
+Send-MailMessage -to "<EmailID>" -from "BackupReport@hpe.com" -Subject "Backup Report" -SmtpServer "<SMTPHost>" -Attachments $HTMLPath, $FailPath, $CSVPath
