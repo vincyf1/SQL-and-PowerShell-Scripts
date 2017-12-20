@@ -1,0 +1,409 @@
+###################################################################################################################
+# Name: Instant Onboarder                                                                                         #
+# Version: 1.0                                                                                                    #
+# Description:                                                                                                    #
+#                This script reports Health for Internet Information Services, Monitoring Services (OvCtrl).      #
+#                                                                                                                 #  
+# Contributors: Vinay S Kulkarni, Adarsh DS Prasad                                                                #
+#                                                                                                                 #
+###################################################################################################################
+
+
+Import-Module -Name WebAdministration
+
+############################################ User Input Below ############################################
+
+#Provide Domain GroupName for which Privileges need to be validated
+$GroupName = "CORP\hp_middleware"
+
+#Enter Path where Powershell Script is located 
+$RootPath = "C:\Temp\IIS_Report\Home\"
+
+#Update Flag if port_mon.cfg needs to be monitored. 
+#If Yes, then set = 1. If No, then set = 0
+$PortMonFlag = "0"
+
+#Enter Monitoring Service Name Eg: OvCtrl, W3SVC
+$MonServiceName = "OvCtrl" 
+
+#Update EMAIL parameters
+$From = $env:COMPUTERNAME + "_InstantOnboarder@dxc.com"
+$To = "vinay.s.kulkarni@dxc.com","adarsh.dev.prasad@dxc.com","deepa.koyachankandy@dxc.com"
+$smtp = "smtpgw.seadrill.com"
+
+############################################ DO NOT MODIFY Below ##########################################
+
+#Enter Monitoring Config Files Path Location
+$MonPath = "C:\osit\etc\ps_mon.cfg"
+$PortPath = "C:\osit\etc\port_mon.cfg"  
+
+$date = Get-Date -format "dd-MMM-yyyy"
+
+$Subject = "** RTPA Report for Servers as on $Date **"
+
+$body = " Status for Websites hosted on Servers as on $Date`n
+        For details, please find attached logs."
+
+
+$DataPath   = $RootPath + "\logs\RTPA_Report_$(Get-Date -Format "yyyymmmdd_hh-mm-ss").csv" 
+$LogPath    = $RootPath + "\logs\SummaryLog_$(Get-Date -Format "yyyymmmdd_hh-mm-ss").txt"
+
+$serverslist = get-content ($RootPath + "\servers.txt")
+if ($serverslist.Count -eq 0)
+{
+    Write-Host "No Servers Listed in Servers.txt file !!!" -ForegroundColor Yellow -BackgroundColor Red
+    "$(Get-Date -UFormat "%Y-%b-%d %r")  No Servers Listed in Servers.txt file!!! "| Out-File -filepath $LogPath -Append
+    "$(Get-Date -UFormat "%Y-%b-%d %r")  End"| Out-File -filepath $LogPath -Append
+    "**************************************************************************************************"| Out-File -filepath $LogPath -Append
+    Exit
+}
+
+"**************************************************************************************************"| Out-File -filepath $LogPath -Append
+"$(Get-Date -UFormat "%Y-%b-%d %r")  RTPA Report Logging Started"| Out-File -filepath $LogPath -Append
+"$(Get-Date -UFormat "%Y-%b-%d %r")  Executed by " + $ENV:USERDOMAIN + "\" + $ENV:USERNAME | Out-File -filepath $LogPath -Append
+"$(Get-Date -UFormat "%Y-%b-%d %r")  Retrieving Website Details..."| Out-File -filepath $LogPath -Append
+$Results    = @()
+
+
+$cred = $null
+$server = $null
+
+$cred = Get-Credential
+
+
+$totalitems = $serverslist.count
+$currentrow = 0
+
+#Branch Servers based on PSRemoting
+$HasRemoteAccess = @()
+$NoRemoteAccess = @()
+
+foreach($server in $serverslist)
+{
+$session = $null    
+try
+    {
+        $session = New-PSSession -Authentication default -Credential $cred -ComputerName $server -ErrorAction SilentlyContinue;# -ErrorVariable ProcessError;
+        
+        
+        If ($ProcessError) 
+        {
+
+        $NoRemoteAccess += $server
+
+        }
+        
+        Invoke-Command -session $session -ErrorAction Stop -scriptblock {test-wsman} | Out-Null
+        $HasRemoteAccess += $server
+    }
+
+catch
+
+    {
+    $NoRemoteAccess += $server
+    }
+
+        if ($session -ne $null)
+        {
+        Remove-PSSession -Session $session -ErrorAction SilentlyContinue
+        }
+    
+}
+
+<#
+Traverse for each server
+#>
+
+
+foreach ($server in $HasRemoteAccess)
+
+{
+    "$(Get-Date -UFormat "%Y-%b-%d %r")  *** SERVER : " + $server + " ***"| Out-File -filepath $LogPath -Append
+
+    $Admin = $null 
+	$currentrow += 1
+    Write-Progress -Activity "Processing server $server - $currentrow of $totalitems" -Status "Progress:" -PercentComplete (($currentrow / $totalitems) * 100)
+
+    $session = $null
+    
+    $session = New-PSSession -Authentication default -Credential $cred -ComputerName $server
+    
+    $WebsiteNames = Invoke-Command -session $session -scriptblock {Import-Module -Name WebAdministration; Get-Website | Select-Object name,state,applicationpool,physicalpath}
+    #$WebsiteNames
+    
+    $IISVersion = Invoke-Command -session $session -scriptblock {(get-itemproperty HKLM:\SOFTWARE\Microsoft\InetStp\  | Select-Object versionstring).versionstring}
+    $AuditLogEnabled = Invoke-Command -session $session -scriptblock {Import-Module -Name psdiagnostics; (Get-LogProperties microsoft-iis-configuration/operational | Select-Object enabled).enabled}
+    
+    $IsLocalAdmin = Invoke-Command -session $session -scriptblock {(net localgroup "administrators" |Where-Object {$_ -like $Using:GroupName}|Measure-Object).count}
+    If($IsLocalAdmin -eq 1) { $Admin = "True"} else { $Admin = "False"}
+
+
+    $Website_Count = ($WebsiteNames|Measure-Object).Count
+
+    If ($Website_Count -gt 0 ) 
+        {
+        "$(Get-Date -UFormat "%Y-%b-%d %r")  Success on " + $server + ". " + $Website_Count + " Websites Found"| Out-File -filepath $LogPath -Append
+        } 
+        
+    else 
+        {
+        "$(Get-Date -UFormat "%Y-%b-%d %r")  No Websites Found on" + $server + "."| Out-File -filepath $LogPath -Append
+            
+        }
+
+        
+<#
+Monitoring Service
+#>
+    $MonConfigEnabled = $null
+    Try
+    {
+    
+    #Check Path
+    If(Test-Path $MonPath) 
+        {   
+            $MonService = Invoke-Command -session $session -scriptblock {param($LocalMonServiceName) Get-Service -Name $LocalMonServiceName} -Args $MonServiceName
+            If($MonService.Name -eq $MonServiceName -and $MonService.Status -eq "Running")
+                {
+                    "$(Get-Date -UFormat "%Y-%b-%d %r")  Monitoring Service $($MonService.Name) is Running on " + $server + "."| Out-File -filepath $LogPath -Append
+                    $MonConfig = Invoke-Command -session $session -scriptblock {param($LocalMonPath) (Get-Content -Path $LocalMonPath -ErrorAction stop | Where-Object {$_ -like '*`"w3wp*' -and $_ -notlike '*#`"w3wp*'}).count} -Args $MonPath
+                    
+                    If ($PortMonFlag -eq 1)
+                    {
+                        $PortConfig = Invoke-Command -session $session -scriptblock {param($LocalPortPath) (Get-Content -Path $LocalPortPath -ErrorAction stop | Where-Object {$_ -like '*`"IIS_80*' -and $_ -notlike '*#`"IIS_80*'}).count} -Args $PortPath
+                    
+                        
+                        If ($MonConfig -ge 1 -and $PortConfig -ge 1) 
+                            { 
+                                "$(Get-Date -UFormat "%Y-%b-%d %r")  Monitoring is Enabled on " + $server + "."| Out-File -filepath $LogPath -Append
+                                 $MonConfigEnabled = "True"
+                            } 
+        
+                        else 
+                            {
+                                "$(Get-Date -UFormat "%Y-%b-%d %r")  Monitoring is Disabled on " + $server + "."| Out-File -filepath $LogPath -Append 
+                                "$(Get-Date -UFormat "%Y-%b-%d %r")  Please check ps_mon.cfg and port_mon.cfg files on " + $server + "."| Out-File -filepath $LogPath -Append 
+                                $MonConfigEnabled = "False"
+                            }
+                            
+                    } 
+                    else 
+                    {
+                        "$(Get-Date -UFormat "%Y-%b-%d %r")  :Note: port_mon.cfg is not being checked"| Out-File -filepath $LogPath -Append
+
+                        If ($MonConfig -ge 1) 
+                            { 
+                                "$(Get-Date -UFormat "%Y-%b-%d %r")  Monitoring is Enabled on " + $server + "."| Out-File -filepath $LogPath -Append
+                                 $MonConfigEnabled = "True"
+                            } 
+        
+                        else 
+                            {
+                                "$(Get-Date -UFormat "%Y-%b-%d %r")  Monitoring is Disabled on " + $server + "."| Out-File -filepath $LogPath -Append 
+                                "$(Get-Date -UFormat "%Y-%b-%d %r")  Please check ps_mon.cfg files on " + $server + "."| Out-File -filepath $LogPath -Append 
+                                $MonConfigEnabled = "False"
+                            }
+                    
+                    }
+                }
+            else
+            {
+                "$(Get-Date -UFormat "%Y-%b-%d %r")  Monitoring Service $($MonService.Name) is NOT Running on " + $server + "."| Out-File -filepath $LogPath -Append 
+                $MonConfigEnabled = "False"
+            }
+        } #End of Check Path
+   
+    else
+        {
+            "$(Get-Date -UFormat "%Y-%b-%d %r")  Monitoring Config Path does not exist on " + $server + "."| Out-File -filepath $LogPath -Append 
+            $MonConfigEnabled = "False"
+        }
+    }
+    Catch
+    {
+        "$(Get-Date -UFormat "%Y-%b-%d %r")  Monitoring Service $($MonService.Name) does NOT exist or Monitoring Configuration does NOT exist on " + $server + "."| Out-File -filepath $LogPath -Append 
+        $MonConfigEnabled = "False"
+    }
+
+
+
+    foreach($website in $WebsiteNames)
+    {
+
+    $Subsite_Count = Invoke-Command -session $session -scriptblock {param($website_name) Import-Module -Name WebAdministration; (Get-WebApplication -Site $website_name).count} -Args $website.name
+     
+
+   
+    <#
+    Certificates
+    #>
+    $ssl_bindings = 0
+    $ssl_bindings = Invoke-Command -session $session -scriptblock {param($website_name)Import-Module -Name WebAdministration; (Get-ChildItem -Path IIS:SSLBindings | Where-Object {$_.Sites.Value -like $website_name} | Measure-Object ).Count} -Args $website.name
+   
+
+                    if ($ssl_bindings -eq 1  )
+                    {
+                        
+       
+                       $cert = Invoke-Command -session $session -scriptblock {param($website_name) 
+           
+           
+                           Import-Module -Name WebAdministration; 
+                           $SSL_sites = Get-ChildItem -Path IIS:SSLBindings
+                           $certificates = Get-ChildItem -Path CERT:\LocalMachine\My
+
+                           foreach ($SSL_site in $SSL_sites)
+
+                           {
+                                   if ($SSL_site.Sites.Value -like $website_name)
+                                   {
+                                    
+                                    $certificate =  $certificates | Where-Object { $_.Thumbprint -eq $SSL_site.Thumbprint}
+                                   
+                                                            $cert = [PsCustomObject]@{
+                                                                SSL_Enabled                  = "Yes"
+                                                                Sites                        = $_.Sites.Value
+                                                                CertificateFriendlyName      = $certificate.FriendlyName
+                                                                CertificateDnsNameList       = $certificate.DnsNameList
+                                                                CertificateNotAfter          = $certificate.NotAfter
+                                                                CertificateIssuer            = $certificate.Issuer
+                                                                }
+                                   }
+
+                           }
+  
+                        $cert 
+
+                    }  -Args $website.name
+
+
+                       #$cert
+                    }
+
+                    else
+
+                    {
+
+                                            $cert = [PsCustomObject]@{
+                                                SSL_Enabled                  = "NO"
+                                                Sites                        = "NA"
+                                                CertificateFriendlyName      = "NA"
+                                                CertificateDnsNameList       = "NA"
+                                                CertificateNotAfter          = "NA"
+                                                CertificateIssuer            = "NA"
+                                                }
+                    }
+
+ 
+    <#
+    Bindings
+
+    #>
+
+        $website_bindings = Invoke-Command -session $session -scriptblock {param($website_name) Import-Module -Name WebAdministration; Get-WebBinding -name $website_name } -Args $website.name 
+        
+
+    $iterate = 0
+
+    <#
+    FTP CHECK
+    #>
+
+    if ($website_bindings.protocol -eq “ftp”)
+        {
+
+        [string[]]$Bindings = ($website_bindings.bindingInformation).Split(”:“)
+        $is_ftp = "yes"
+        $ftp_ip = $Bindings[0]
+        $ftp_port = $Bindings[1]
+        }
+    else
+        {
+        $is_ftp = "NO"
+        $ftp_ip = "NA"
+        $ftp_port = "NA"
+        }
+
+
+
+
+          $Properties = @{
+          Servername = $server
+          IIS_Version = $IISVersion
+          Audit_Log_Enabled = $AuditLogEnabled
+          Website_Name = $website.name
+          Subsite_Count = $Subsite_Count
+          Website_status = $website.state
+          Physical_path = $Website.physicalpath
+          SSL_Enabled = $cert.SSL_Enabled
+          Certificate_Name = $cert.CertificateFriendlyName
+          Certificate_Expiry_Date = $cert.CertificateNotAfter
+          Port_Binding = $BindingInfo
+          Is_ftp = $is_ftp
+          ftp_IP = $ftp_ip
+          ftp_port = $ftp_port
+          Is_Group_Local_Admin = $Admin
+          Monitoring_Enabled = $MonConfigEnabled
+          }
+
+    $Results += New-Object psobject -Property $properties
+
+    }
+    
+    Remove-PSSession -Session $session
+
+}
+
+<# 
+GENERATE AND FORMAT FINAL INFO
+#>
+
+"$(Get-Date -UFormat "%Y-%b-%d %r")  Generating the Report in CSV format"| Out-File -filepath $LogPath -Append
+
+$Results | Select-Object Servername,IIS_Version,Audit_Log_Enabled,Website_Name,
+Subsite_Count,Website_status,physical_path,SSL_Enabled,Certificate_Name,Certificate_Expiry_Date,
+Port_Binding,Is_ftp,ftp_IP,ftp_port,Is_Group_Local_Admin,Monitoring_Enabled | Export-Csv -notypeinformation -Path $DataPath
+
+If(Test-Path $DataPath)
+{
+    "$(Get-Date -UFormat "%Y-%b-%d %r")  Report generated successfully"| Out-File -filepath $LogPath -Append
+}else{
+    "$(Get-Date -UFormat "%Y-%b-%d %r")  Report generation failed. Please check your code."| Out-File -filepath $LogPath -Append
+    "$(Get-Date -UFormat "%Y-%b-%d %r")  End"| Out-File -filepath $LogPath -Append
+    "**************************************************************************************************"| Out-File -filepath $LogPath -Append
+    Exit
+}
+
+"$(Get-Date -UFormat "%Y-%b-%d %r")  RTPA Report File Generated. Watch out for Email."| Out-File -filepath $LogPath -Append
+If ($NoRemoteAccess -ne $null)
+{
+    Write-Host "*** The following Servers do not have Remote Execution Enabled." -ForegroundColor Yellow -BackgroundColor Red
+    Write-Host "*** Please run the script locally on the below Servers: " -ForegroundColor Yellow -BackgroundColor Red
+    Write-Host $NoRemoteAccess -ForegroundColor Yellow -BackgroundColor Red
+
+    "$(Get-Date -UFormat "%Y-%b-%d %r")  *** The following Servers do not have Remote Execution Enabled."| Out-File -filepath $LogPath -Append
+    "$(Get-Date -UFormat "%Y-%b-%d %r")  *** Please run the script locally on the below Servers: "| Out-File -filepath $LogPath -Append
+    $NoRemoteAccess | Out-File -filepath $LogPath -Append
+}
+"$(Get-Date -UFormat "%Y-%b-%d %r")  End"| Out-File -filepath $LogPath -Append
+"**************************************************************************************************"| Out-File -filepath $LogPath -Append
+ 
+
+ #Output No Remote Access Servers in Email
+ $NoRemoteBody = $null
+ If ($NoRemoteAccess -ne $null)
+ {
+    $NoRemoteBody = "`nNote: The following Servers are either inaccessible or do not have Remote Execution Enabled. Please run the script locally."
+    $NoRemoteBody += $NoRemoteAccess
+ }
+    
+    $MailParameters = @{
+    From = $From
+    To = $To
+    Subject = $Subject
+    Body = $Body + $NoRemoteBody
+    Attachments = @($DataPath,$LogPath)
+    SMTPServer = $smtp
+    } 
+
+Send-MailMessage @MailParameters 
