@@ -27,9 +27,9 @@ $PortMonFlag = "0"
 $MonServiceName = "OvCtrl" 
 
 #Update EMAIL parameters
-$From = $env:COMPUTERNAME + "_InstantOnboarder@dxc.com"
-$To = "vinay.s.kulkarni@dxc.com","adarsh.dev.prasad@dxc.com","deepa.koyachankandy@dxc.com"
-$smtp = "smtpgw.seadrill.com"
+$From = $env:COMPUTERNAME + "_InstantOnboarder"
+$To = "<EmailID1>","<EmailID2>","<EmailID3>"
+$smtp = "<SMTP_Host_Address>"
 
 ############################################ DO NOT MODIFY Below ##########################################
 
