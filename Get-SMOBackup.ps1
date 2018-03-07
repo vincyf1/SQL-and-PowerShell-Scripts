@@ -1,3 +1,5 @@
+## Developed by Vinay S Kulkarni, GitHub UserName: vincyf1
+
 [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.SMO") | Out-Null
 [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.SmoExtended") | Out-Null
 
